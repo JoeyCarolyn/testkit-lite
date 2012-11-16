@@ -29,6 +29,7 @@ from xml.etree import ElementTree
 from testkitlite.common.str2 import *
 from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
 from testkitlite.common.autoexec import shell_exec
+from testkitlite.common.killall import killall
 import subprocess
 import signal
 import urllib2
@@ -156,6 +157,13 @@ def checkResult(case):
     if not case.is_executed:
         print "----------------------Time is out----------------The case \"%s\" is timeout. Set the result \"BLOCK\", and start a new browser" % case.purpose
         case.set_result("BLOCK", "Time is out")
+        print "[ kill existing client, pid: %s ]" % TestkitWebAPIServer.client_process.pid
+        try:
+            TestkitWebAPIServer.client_process.terminate()
+        except:
+            killall(TestkitWebAPIServer.client_process.pid)
+        print "[ start new client in 10sec ]"
+        time.sleep(10)
         client_command = TestkitWebAPIServer.default_params["client_command"]
         start_client(client_command)
     else:
@@ -388,8 +396,9 @@ class TestkitWebAPIServer(BaseHTTPRequestHandler):
 
 def start_client(command):
     try:
-        proc = subprocess.Popen(command, stdout=subprocess.PIPE, shell=True, preexec_fn=os.setsid)
+        proc = subprocess.Popen(command, stdout=subprocess.PIPE, shell=True)
         TestkitWebAPIServer.client_process = proc
+        print "[ start client with pid: %s ]" % proc.pid
     except Exception, e:
         print "Exception occurs while invoking \"%s\"" % command
         sys.exit(-1)
@@ -413,19 +422,22 @@ def startup(parameters):
         print "[ started http server at %s:%d ]" % ("127.0.0.1", 8000)
         hidestatus = TestkitWebAPIServer.default_params["hidestatus"]
         pid_log = TestkitWebAPIServer.default_params["pid_log"]
-        testsuite = TestkitWebAPIServer.default_params["client_command"]
-        resultfile = TestkitWebAPIServer.default_params["resultfile"]
+        testsuite = TestkitWebAPIServer.default_params["testsuite"]
+        exe_sequence = TestkitWebAPIServer.default_params["exe_sequence"]
         client_command = TestkitWebAPIServer.default_params["client_command"]
         print "[ parameter hidestatus: %s ]" % hidestatus
         print "[ parameter pid_log: %s ]" % pid_log
-        print "[ parameter testsuite: %s ]" % testsuite
-        print "[ parameter resultfile: %s ]" % resultfile
+        print "[ parameter testsuite: ]"
+        for key in testsuite:
+            print "  [ package name: %s ]" % key
+            print "  [ xml files: %s ]" % testsuite[key]
+        print "[ parameter exe_sequence: %s ]" % exe_sequence
         print "[ parameter client_command: %s ]" % client_command
         # start widget and http server
         start_client(client_command)
         server.serve_forever()
     except KeyboardInterrupt:
-        print "\nbyebye\n"
+        print "\n[ existing http server on user cancel ]\n"
         server.socket.close()
     except:
         pass

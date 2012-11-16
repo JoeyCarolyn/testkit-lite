@@ -66,7 +66,12 @@ class TRunner:
         self.filter_rules = None
         self.fullscreen = False
         self.resultfiles = set()
+        self.core_auto_files = []
+        self.core_manual_files = []
         self.core_manual_flag = 0
+        self.testsuite_dict = {} 
+        self.exe_sequence = []
+        self.log = None
 
     def set_pid_log(self, pid_log):
         self.pid_log = pid_log
@@ -89,7 +94,7 @@ class TRunner:
     def set_fullscreen(self, state):
         self.fullscreen = state
 
-    def run(self, testxmlfile, resultdir=None):
+    def prepare_run(self, testxmlfile, resultdir=None):
         """
         testxmlfile: target testxml file
         execdir and resultdir: should be the absolute path since TRunner
@@ -110,14 +115,12 @@ class TRunner:
                     filename = filename.split('\\')[-2]
                 if self.filter_rules["execution_type"] == ["manual"]:
                     resultfile = "%s.manual.xml" % filename
-                    sleeptime = 10
                 else:
                     resultfile = "%s.auto.xml" % filename
-                    sleeptime = 6
                 resultfile = _j(resultdir, resultfile)
                 if not _e(resultdir):
                     os.mkdir(resultdir)
-                print "[ apply filter ]"
+                print "[ analysis testing xml file: %s ]" % resultfile
                 try:
                     ep = etree.parse(testxmlfile)
                     suiteparent = ep.getroot()
@@ -142,14 +145,16 @@ class TRunner:
                     return False
                 casefind = etree.parse(resultfile).getiterator('testcase')
                 if casefind:
-                    print "[ testing xml: %s ]" % _abs(resultfile)
+                    file = "%s" % _b(resultfile)
+                    file = os.path.splitext(file)[0]
+                    testsuite_dict_value_list = []
+                    testsuite_dict_add_flag = 0
                     execute_suite_one_way = 1
                     if self.external_test: 
                         parser = etree.parse(resultfile)
                         no_wrtlauncher = 1
                         suite_total_count = 0 
                         suite_wrt_launcher_count = 0
-                        
                         for tsuite in parser.getiterator('suite'):
                             suite_total_count += 1
                             if tsuite.get('launcher'):
@@ -157,9 +162,14 @@ class TRunner:
                                     no_wrtlauncher = 0
                                     suite_wrt_launcher_count += 1
                         if no_wrtlauncher:
-                            self.execute(resultfile, resultfile)
+                            if self.filter_rules["execution_type"] == ["auto"]:
+                                self.core_auto_files.append(resultfile)
+                            else:
+                                self.core_manual_files.append(resultfile)
                         elif suite_total_count == suite_wrt_launcher_count:
-                            self.execute_external_test(resultfile, resultfile)
+                            testsuite_dict_value_list.append(resultfile) 
+                            testsuite_dict_add_flag = 1
+                            self.exe_sequence.append(file)
                         else:
                             filename_diff = 1
                             execute_suite_one_way = 0
@@ -180,16 +190,29 @@ class TRunner:
                                 if case_suite_find:
                                     if tsuite.get('launcher'):
                                         if tsuite.get('launcher').find('WRTLauncher'):
-                                            self.execute(suitefilename, suitefilename)
+                                            if self.filter_rules["execution_type"] == ["auto"]:
+                                                self.core_auto_files.append(suitefilename)
+                                            else:
+                                                self.core_manual_files.append(suitefilename)
                                         else:
-                                            self.execute_external_test(suitefilename, suitefilename)
+                                            testsuite_dict_value_list.append(suitefilename) 
+                                            if testsuite_dict_add_flag == 0:
+                                                self.exe_sequence.append(file)
+                                            testsuite_dict_add_flag = 1
                                     else:
-                                        self.execute(suitefilename, suitefilename)
+                                        if self.filter_rules["execution_type"] == ["auto"]:
+                                            self.core_auto_files.append(suitefilename)
+                                        else:
+                                            self.core_manual_files.append(suitefilename)
                                     self.resultfiles.add(suitefilename)
                                 filename_diff += 1
-                                time.sleep(sleeptime)
+                        if testsuite_dict_add_flag:
+                            self.testsuite_dict[file] = testsuite_dict_value_list 
                     else:
-                        self.execute(resultfile, resultfile)
+                        if self.filter_rules["execution_type"] == ["auto"]:
+                            self.core_auto_files.append(resultfile)
+                        else:
+                            self.core_manual_files.append(resultfile)
                     if execute_suite_one_way:
                         self.resultfiles.add(resultfile)
                         
@@ -197,8 +220,42 @@ class TRunner:
                 print e
                 ok &= False
         return ok
-    
-    def merge_resultfile(self, start_time, end_time, latest_dir):
+            
+    def run_and_merge_resultfile(self, start_time, end_time, latest_dir):
+        # run core auto cases
+        for core_auto_files in self.core_auto_files:
+            temp = os.path.splitext(core_auto_files)[0]
+            temp = os.path.splitext(temp)[0]
+            temp = os.path.splitext(temp)[0]
+            
+            if self.log:
+                self.log = os.path.splitext(self.log)[0]
+                self.log = os.path.splitext(self.log)[0]
+                self.log = os.path.splitext(self.log)[0]
+            if self.log != temp:
+                print "[ testing xml: %s.auto.xml ]" % _abs(temp)
+            self.log = core_auto_files
+            self.execute(core_auto_files, core_auto_files)
+            
+        # run webAPI cases
+        self.execute_external_test(self.testsuite_dict, self.exe_sequence)
+        
+        # run core manual cases
+        self.log = None
+        for core_manual_files in self.core_manual_files:
+            temp = os.path.splitext(core_manual_files)[0]
+            temp = os.path.splitext(temp)[0]
+            temp = os.path.splitext(temp)[0]
+            
+            if self.log:
+                self.log = os.path.splitext(self.log)[0]
+                self.log = os.path.splitext(self.log)[0]
+                self.log = os.path.splitext(self.log)[0]
+            if self.log != temp:
+                print "[ testing xml: %s.manual.xml ]" % _abs(temp)
+            self.log = core_manual_files
+            self.execute(core_manual_files, core_manual_files)
+            
         mergefile = mktemp(suffix='.xml', prefix='tests.', dir=latest_dir)
         mergefile = os.path.splitext(mergefile)[0]
         mergefile = os.path.splitext(mergefile)[0]
@@ -300,7 +357,7 @@ class TRunner:
         t = minidom.parseString(rawstr)
         open(resultfile, 'w+').write(t.toprettyxml(indent="  "))
 
-    def execute_external_test(self, testxmlfile, resultfile):
+    def execute_external_test(self, testsuite, exe_sequence):
         """Run external test"""
         import subprocess, thread
         #from  testkithttpd import startup
@@ -312,8 +369,8 @@ class TRunner:
         try:
             parameters = {}
             parameters.setdefault("pid_log", self.pid_log)
-            parameters.setdefault("testsuite", testxmlfile)
-            parameters.setdefault("resultfile", resultfile)
+            parameters.setdefault("testsuite", testsuite)
+            parameters.setdefault("exe_sequence", exe_sequence)
             parameters.setdefault("client_command", self.external_test)
             if self.fullscreen:
                 parameters.setdefault("hidestatus", "1")
@@ -341,7 +398,7 @@ class TRunner:
                         pattern = re.compile('No such process')
                         match = pattern.search(str(e))
                         if not match:
-                            print "[ fail to kill eexisting http server, pid: %s, error: %s ]" % (int(pid), e)
+                            print "[ fail to kill existing http server, pid: %s, error: %s ]" % (int(pid), e)
             if http_server_pid == "none":
                 print "[ start new http server ]"
             else:
@@ -507,3 +564,4 @@ class TRunner:
         old_file.close()
         remove(file_name)
         move(abs_path, file_name)
+

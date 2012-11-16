@@ -101,7 +101,7 @@ except Exception, e:
 
 # detect version option
 if "--version" in sys.argv:
-    print "[ testkit-lite v2.2.7-2 ]"
+    print "[ testkit-lite v2.2.7-3 ]"
     sys.exit(1)
 
 #get test engine, now we only got default engine
@@ -300,8 +300,7 @@ Note: \n\
                     try:
                         wfilters['execution_type'] = ["manual"]
                         runner.add_filter_rules(**wfilters)
-                        runner.run(t, resultdir=log_dir)
-                        time.sleep(10)
+                        runner.prepare_run(t, resultdir=log_dir)
                     except Exception, e:
                         print e
             else:
@@ -309,16 +308,14 @@ Note: \n\
                     try:
                         wfilters['execution_type'] = ["auto"]
                         runner.add_filter_rules(**wfilters)
-                        runner.run(t, resultdir=log_dir)
-                        time.sleep(6)
+                        runner.prepare_run(t, resultdir=log_dir)
                     except Exception, e:
                         print e
                 for t in testxmls:
                     try:
                         wfilters['execution_type'] = ["manual"]
                         runner.add_filter_rules(**wfilters)
-                        runner.run(t, resultdir=log_dir)
-                        time.sleep(10)
+                        runner.prepare_run(t, resultdir=log_dir)
                     except Exception, e:
                         print e
         else:
@@ -326,8 +323,7 @@ Note: \n\
                 try:
                     wfilters['execution_type'] = ["auto"]
                     runner.add_filter_rules(**wfilters)
-                    runner.run(t, resultdir=log_dir)
-                    time.sleep(6)
+                    runner.prepare_run(t, resultdir=log_dir)
                 except Exception, e:
                     print e
     # run only one tests.xml
@@ -380,35 +376,34 @@ Note: \n\
                 try:
                     wfilters['execution_type'] = ["manual"]
                     runner.add_filter_rules(**wfilters)
-                    runner.run(testxml, resultdir=log_dir)
+                    runner.prepare_run(testxml, resultdir=log_dir)
                 except Exception, e:
                     print e
             else:
                 try:
                     wfilters['execution_type'] = ["auto"]
                     runner.add_filter_rules(**wfilters)
-                    runner.run(testxml, resultdir=log_dir)
-                    time.sleep(6)
+                    runner.prepare_run(testxml, resultdir=log_dir)
                     wfilters['execution_type'] = ["manual"]
                     runner.add_filter_rules(**wfilters)
-                    runner.run(testxml, resultdir=log_dir)
+                    runner.prepare_run(testxml, resultdir=log_dir)
                 except Exception, e:
                     print e
         else:
             try:
                 wfilters['execution_type'] = ["auto"]
                 runner.add_filter_rules(**wfilters)
-                runner.run(testxml, resultdir=log_dir)
+                runner.prepare_run(testxml, resultdir=log_dir)
             except Exception, e:
                 print e
     try:
         end_time = datetime.today().strftime("%Y-%m-%d_%H_%M_%S")
-        runner.merge_resultfile(start_time, end_time, log_dir)
+        runner.run_and_merge_resultfile(start_time, end_time, log_dir)
     except Exception, e:
         print e
 
 except KeyboardInterrupt, e:
-    print >> sys.stderr, "\n[ exiting on user cancel ]\n"
+    print >> sys.stderr, "\n[ exiting testkit-lite on user cancel ]\n"
     sys.exit(1)
 except Exception, e:
     print >> sys.stderr, e
