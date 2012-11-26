@@ -49,7 +49,7 @@ class TestStep:
 
 class TestCase:
     """Test Case Model"""
-    def __init__(self, case_node, dom, case_order):
+    def __init__(self, case_node, dom, case_order, xml_name, package_name):
         self.purpose = case_node.getAttribute("purpose")
         
         if case_node.getElementsByTagName("test_script_entry").item(0) is not None and case_node.getElementsByTagName("test_script_entry").item(0).childNodes.item(0) is not None:
@@ -68,6 +68,8 @@ class TestCase:
         self.time_task = None
         self.order = case_order
         self.case_id = case_node.getAttribute("id")
+        self.xml_name = xml_name
+        self.package_name = package_name
         if case_node.getElementsByTagName("pre_condition").item(0) is not None and case_node.getElementsByTagName("pre_condition").item(0).childNodes.item(0) is not None:
             self.pre_con = case_node.getElementsByTagName("pre_condition").item(0).childNodes.item(0).data
         else:
@@ -102,7 +104,7 @@ class TestCase:
             self.timeout = 90
     
     def to_string(self):
-        objstr = "[Case] execute case:\nTestCase: %s\nTestEntry: %s\nExpected Result: %s\nExecution Type: %s" % (self.purpose, self.entry, self.e_result, self.e_type)
+        objstr = "[Case] execute case:\n[start testing: %s]\n[start testing: %s]\nTestCase: %s\nTestEntry: %s\nExpected Result: %s\nExecution Type: %s" % (self.xml_name, self.package_name, self.purpose, self.entry, self.e_result, self.e_type)
         return objstr
     
     def is_manual(self):
@@ -184,25 +186,39 @@ class TestkitWebAPIServer(BaseHTTPRequestHandler):
     def read_test_definition(self):
         if self.default_params.has_key("testsuite"):
             try:
-                from xml.dom.minidom import parse
-                TestkitWebAPIServer.xml_dom_root = parse(self.default_params["testsuite"])
-                self.xml_dom_root = TestkitWebAPIServer.xml_dom_root
-                self.iter_params.update({self.auto_index_key: 0})
-                index = 1
-                for node in self.xml_dom_root.getElementsByTagName('testcase'):
-                    tc = TestCase(node, self.xml_dom_root, index)
-                    index = index + 1
-                    if tc.is_manual():
-                        self.manual_test_cases[tc.purpose] = tc
-                    else:
-                        self.auto_test_cases[tc.purpose] = tc
-                        if tc.purpose in self.auto_case_id_array:
-                            print "================================The purpose '%s' is already in the list==========================" % tc.purpose
-                        else:
-                            self.auto_case_id_array.append(tc.purpose)
+              from xml.dom.minidom import parse
+              suites_dict = self.default_params["testsuite"]
+              exe_sequence = self.default_params["exe_sequence"]
+              index = 1
+              for package_name in exe_sequence:
+                  suites_array = suites_dict[package_name]
+                  for xml_name in suites_array:
+                      tmp_xml_root = parse(xml_name)
+                      for node in tmp_xml_root.getElementsByTagName('testcase'):
+                          tc = TestCase(node, tmp_xml_root, index, xml_name, package_name)
+                          index = index + 1
+                          if tc.is_manual():
+                              self.manual_test_cases[tc.purpose] = tc
+                          else:
+                              self.auto_test_cases[tc.purpose] = tc
+                              if tc.purpose in self.auto_case_id_array:
+                                  print "================================The purpose '%s' is already in the list==========================" % tc.purpose
+                              else:
+                                  self.auto_case_id_array.append(tc.purpose) 
+                         
+                      if TestkitWebAPIServer.xml_dom_root is None:
+                          TestkitWebAPIServer.xml_dom_root = tmp_xml_root
+                      else:
+                          for suite_node in tmp_xml_root.getElementsByTagName('suite'):
+                              definition_node = TestkitWebAPIServer.xml_dom_root.childNodes[0]
+                              if definition_node is None:
+                                  definition_node = TestkitWebAPIServer.xml_dom_root.createElement("test_definition")
+                              definition_node.appendChild(suite_node)
+              self.xml_dom_root = TestkitWebAPIServer.xml_dom_root
+              self.iter_params.update({self.auto_index_key: 0})
             except Exception, e:
-                print "reading test suite fail when loading test cases..."
-                print e
+              print "reading test suite fail when loading test cases..."
+              print e
         else:
             print "test-suite file not found..."
         print "Auto: %d\nManual: %d" % (len(self.auto_test_cases), len(self.manual_test_cases))
@@ -221,6 +237,7 @@ class TestkitWebAPIServer(BaseHTTPRequestHandler):
     
     def generate_result_xml(self):
         result_xml = TestkitWebAPIServer.xml_dom_root.toprettyxml(indent="  ")
+        print result_xml
         for key, value in self.auto_test_cases.iteritems():
             value.cancel_time_check()
         self.save_RESULT(result_xml, self.default_params["resultfile"])
@@ -264,18 +281,24 @@ class TestkitWebAPIServer(BaseHTTPRequestHandler):
                print task.to_string()
                self.send_response(200)
                self.send_header("Content-type", "application/json")
+               self.send_header("Content-Length", str(len(json.dumps(task.to_json()))))
+               self.send_header("Access-Control-Allow-Origin", "*")
                self.end_headers()
                self.wfile.write(json.dumps(task.to_json()))
            else:
                print "No auto case is available any more"
                self.send_response(200)
                self.send_header("Content-type", "application/json")
+               self.send_header("Content-Length", str(len(json.dumps({"none": 0}))))
+               self.send_header("Access-Control-Allow-Origin", "*")
                self.end_headers()
                self.wfile.write(json.dumps({"none": 0}))
        else:
            print "Invalid session"
            self.send_response(200)
            self.send_header("Content-type", "application/json")
+           self.send_header("Content-Length", str(len(json.dumps({"invalid": 1}))))
+           self.send_header("Access-Control-Allow-Origin", "*")
            self.end_headers()
            self.wfile.write(json.dumps({"invalid": 1}))
     
@@ -283,10 +306,13 @@ class TestkitWebAPIServer(BaseHTTPRequestHandler):
        #load all manual test cases
        self.send_response(200)
        self.send_header("Content-type", "application/json")
-       self.end_headers()
+       
        dictlist = []
        for key, value in self.manual_test_cases.iteritems():
           dictlist.append(value.to_json())
+       self.send_header("Content-Length", str(len(json.dumps(dictlist))))
+       self.send_header("Access-Control-Allow-Origin", "*")
+       self.end_headers()
        self.wfile.write(json.dumps(dictlist))
     
     def commit_result(self):
@@ -327,6 +353,8 @@ class TestkitWebAPIServer(BaseHTTPRequestHandler):
            
        self.send_response(200)
        self.send_header("Content-type", "application/json")
+       self.send_header("Content-Length", str(len(json.dumps({"OK": 1}))))
+       self.send_header("Access-Control-Allow-Origin", "*")
        self.end_headers()
        self.wfile.write(json.dumps({"OK": 1}))
     
@@ -357,6 +385,8 @@ class TestkitWebAPIServer(BaseHTTPRequestHandler):
            tested_task.set_result(result, "")
        self.send_response(200)
        self.send_header("Content-type", "application/json")
+       self.send_header("Content-Length", str(len(json.dumps({"OK": 1}))))
+       self.send_header("Access-Control-Allow-Origin", "*")
        self.end_headers()
        self.wfile.write(json.dumps({"OK": 1}))
     
@@ -386,6 +416,8 @@ class TestkitWebAPIServer(BaseHTTPRequestHandler):
             print "---------------------------------------Checking server, the server is running.--------------------------------------------------------"
             self.send_response(200)
             self.send_header("Content-type", "application/json")
+            self.send_header("Content-Length", str(len(json.dumps({"OK": 1}))))
+            self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
             self.wfile.write(json.dumps({"OK": 1}))
         return None
@@ -406,6 +438,10 @@ def start_client(command):
 def startup(parameters):
     try:
         TestkitWebAPIServer.default_params.update(parameters)
+        testsuites = parameters["testsuite"]
+        for k in testsuites:
+            print "_________________________________________Key:%s_________Value:%s"%(k, testsuites[k])
+
         # update default value when start it again
         TestkitWebAPIServer.auto_test_cases = {}
         TestkitWebAPIServer.manual_test_cases = {}
